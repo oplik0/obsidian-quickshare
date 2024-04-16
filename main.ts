@@ -7,7 +7,7 @@ import {
 	TFile,
 	WorkspaceLeaf,
 } from "obsidian";
-import { NoteSharingService } from "src/NoteSharingService";
+import { NoteSharingService, type ShareNoteOptions } from "src/NoteSharingService";
 import { DEFAULT_SETTINGS } from "src/obsidian/PluginSettings";
 import SettingsTab from "src/obsidian/SettingsTab";
 import { SharedNoteSuccessModal } from "src/ui/SharedNoteSuccessModal";
@@ -141,8 +141,36 @@ export default class NoteSharingPlugin extends Plugin {
 				const activeView =
 					this.app.workspace.getActiveViewOfType(MarkdownView);
 				if (!activeView) return false;
-				if (checking) return true;
+				if (
+					(checking && this.cache.has(activeView.file.path)) &&
+					!this.cache.get(activeView.file.path).deleted_from_server
+				) {
+					return false;
+				}
+				if (checking) {
+					return true;
+				}
 				this.shareNote(activeView.file);
+			},
+		});
+		this.addCommand({
+			id: "obsidian-quickshare-update-note",
+			name: "Update note",
+			checkCallback: (checking: boolean) => {
+				// Only works on Markdown views
+				const activeView =
+					this.app.workspace.getActiveViewOfType(MarkdownView);
+				if (!activeView) return false;
+				if (
+					(checking && !this.cache.has(activeView.file.path)) ||
+					this.cache.get(activeView.file.path).deleted_from_server
+				) {
+					return false;
+				}
+				if (checking) {
+					return true;
+				}
+				this.shareNote(activeView.file, true);
 			},
 		});
 
@@ -182,16 +210,25 @@ export default class NoteSharingPlugin extends Plugin {
 		}
 	}
 
-	async shareNote(file: TFile) {
-		const { setFrontmatterKeys } = useFrontmatterHelper(this.app);
+	async shareNote(file: TFile, update = false) {
+		const { setFrontmatterKeys, getFrontmatterKey } = useFrontmatterHelper(this.app);
+		const cacheData = this.cache.get(file.path);
 
 		const body = await this.app.vault.read(file);
 		const title = this.settings.shareFilenameAsTitle
 			? file.basename
 			: undefined;
-
+		const existingUrl = getFrontmatterKey(file, "url");
+		const additionalOptions: Partial<ShareNoteOptions> = {}
+		if (existingUrl && cacheData?.note_id && cacheData?.secret_token) {
+			console.log("Re-sharing existing note");
+			additionalOptions.note_id = cacheData.note_id;
+			additionalOptions.secret_token = cacheData.secret_token;
+			additionalOptions.key = (new URL(existingUrl)).hash.slice(1);
+			additionalOptions.iv = cacheData.iv;
+		}
 		this.noteSharingService
-			.shareNote(body, { title })
+			.shareNote(body, { title, ...additionalOptions })
 			.then((res) => {
 				if (this.settings.useFrontmatter) {
 					const datetime = moment().format(
@@ -213,13 +250,15 @@ export default class NoteSharingPlugin extends Plugin {
 					secret_token: res.secret_token,
 					note_id: res.note_id,
 					basename: file.basename,
+					iv: res.iv,
 				});
-
-				new SharedNoteSuccessModal(
-					this,
-					res.view_url,
-					res.expire_time
-				).open();
+				if (!update) {
+					new SharedNoteSuccessModal(
+						this,
+						res.view_url,
+						res.expire_time
+					).open();
+				}
 			})
 			.catch(this.handleSharingError);
 	}

@@ -10,6 +10,7 @@ export type QuickShareData = {
 	deleted_from_server?: boolean;
 	note_id: string;
 	basename: string;
+	iv: string;
 };
 
 type FileId = string;

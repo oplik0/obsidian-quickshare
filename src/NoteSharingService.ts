@@ -2,8 +2,12 @@ import moment, { type Moment } from "moment";
 import { requestUrl } from "obsidian";
 import { encryptString } from "./crypto/encryption";
 
-type ShareNoteOptions = {
+export type ShareNoteOptions = {
 	title?: string;
+	note_id?: string;
+	secret_token?: string;
+	key?: string;
+	iv?: string;
 };
 
 type JsonPayload = {
@@ -17,6 +21,7 @@ type Response = {
 	expire_time: Moment;
 	secret_token: string;
 	note_id: string;
+	iv: string;
 };
 
 export class NoteSharingService {
@@ -47,8 +52,8 @@ export class NoteSharingService {
 
 		const stringPayload = JSON.stringify(jsonPayload);
 
-		const { ciphertext, iv, key } = await encryptString(stringPayload);
-		const res = await this.postNote(ciphertext, iv);
+		const { ciphertext, iv, key } = await encryptString(stringPayload, options.key, options.iv);
+		const res = await this.postNote(ciphertext, iv, options.secret_token, options.note_id);
 		res.view_url += `#${key}`;
 		console.log(`Note shared: ${res.view_url}`);
 		return res;
@@ -69,7 +74,7 @@ export class NoteSharingService {
 		});
 	}
 
-	private async postNote(ciphertext: string, iv: string): Promise<Response> {
+	private async postNote(ciphertext: string, iv: string, secret_token?: string, id?: string): Promise<Response> {
 		const res = await requestUrl({
 			url: `${this._url}/api/note`,
 			method: "POST",
@@ -80,6 +85,8 @@ export class NoteSharingService {
 				user_id: this._userId,
 				plugin_version: this._pluginVersion,
 				crypto_version: "v3",
+				secret_token: secret_token,
+				id: id,
 			}),
 		});
 

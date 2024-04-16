@@ -53,11 +53,12 @@ export function masterKeyToString(masterKey: ArrayBuffer): string {
 
 export async function encryptString(
 	md: string,
-	secret: ArrayBuffer
+	secret: ArrayBuffer,
+	iv?: Uint8Array,
 ): Promise<EncryptedData> {
 	const plaintext = new TextEncoder().encode(md);
 
-	const iv = window.crypto.getRandomValues(new Uint8Array(16));
+	iv = iv ?? window.crypto.getRandomValues(new Uint8Array(16));
 
 	const buf_ciphertext: ArrayBuffer = await window.crypto.subtle.encrypt(
 		{ name: "AES-GCM", iv: iv },
